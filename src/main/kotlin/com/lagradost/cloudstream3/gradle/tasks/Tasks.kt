@@ -72,18 +72,6 @@ fun registerTasks(project: Project) {
             it.manifestFile.set(processManifestTask.manifestOutputFile)
 
             it.outputFile.set(intermediates.resolve("res.apk"))
-
-            it.doLast { _ ->
-                val resApkFile = it.outputFile.asFile.get()
-
-                if (resApkFile.exists()) {
-                    project.tasks.named("make", AbstractCopyTask::class.java) {
-                        it.from(project.zipTree(resApkFile)) { copySpec ->
-                            copySpec.exclude("AndroidManifest.xml")
-                        }
-                    }
-                }
-            }
         }
 
     val compilePluginJar = project.tasks.register("compilePluginJar") {
@@ -190,9 +178,17 @@ fun registerTasks(project: Project) {
             it.from(compileDexTask.outputFile)
 
             val zip = it as Zip
+
             if (extension.requiresResources) {
                 zip.dependsOn(compileResources.get())
+                it.from(project.provider {
+                    val resApkFile = compileResources.get().outputFile.get().asFile
+                    if (resApkFile.exists()) project.zipTree(resApkFile) else emptyList<File>()
+                }) { copySpec ->
+                    copySpec.exclude("AndroidManifest.xml")
+                }
             }
+
             zip.isPreserveFileTimestamps = false
             zip.archiveBaseName.set(project.name)
             zip.archiveExtension.set("cs3")
