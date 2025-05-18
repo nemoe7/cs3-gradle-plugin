@@ -207,7 +207,7 @@ fun registerTasks(project: Project) {
         it.group = TASK_GROUP
     }
 
-    project.tasks.register("deployWithAdb", DeployWithAdbTask::class.java) {
+    project.tasks.register("adb", DeployWithAdbTask::class.java) {
         it.group = TASK_GROUP
         it.dependsOn("make")
     }
