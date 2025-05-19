@@ -6,8 +6,10 @@ import com.lagradost.cloudstream3.gradle.entities.*
 fun Project.makeManifest(): PluginManifest {
     val extension = this.extensions.getCloudstream()
 
-    require(extension.pluginClassName != null) {
-        "No plugin class found, make sure your plugin class is annotated with @CloudstreamPlugin"
+    if (!extension.isLibrary) {
+        require(extension.pluginClassName != null) {
+            "Plugin class not found, make sure your plugin class is annotated with @CloudstreamPlugin"
+        }
     }
 
     val version = this.version.toString().toIntOrNull(10)

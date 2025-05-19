@@ -21,9 +21,11 @@ abstract class MakePluginsJsonTask : DefaultTask() {
         val lst = LinkedList<PluginEntry>()
 
         for (subproject in project.allprojects) {
-            subproject.extensions.findCloudstream() ?: continue
+            val extension = subproject.extensions.findCloudstream() ?: continue
 
-            lst.add(subproject.makePluginEntry())
+            if (!extension.isLibrary) {
+                lst.add(subproject.makePluginEntry())
+            }
         }
 
         outputFile.asFile.get().writeText(

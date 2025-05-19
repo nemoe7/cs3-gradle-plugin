@@ -39,6 +39,9 @@ abstract class DeployWithAdbTask : DefaultTask() {
 
         var file = make.outputs.files.singleFile
 
+        if (project.extensions.getCloudstream().isLibrary)
+            return
+
         var path = "/storage/emulated/0/Cloudstream3/plugins/"
 
         device.push(file, RemoteFile(path + file.name))

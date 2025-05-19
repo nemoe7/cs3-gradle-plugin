@@ -89,6 +89,7 @@ abstract class CloudstreamExtension @Inject constructor(project: Project) {
     var language: String? = null
     var tvTypes: List<String>? = null
     var iconUrl: String? = null
+    var isLibrary = false
     /**
      * Enable this if your plugin does not use any android imports or app refrences.
      * This will generate jar files using :make and these files can be checked with :ensureJarCompatibility

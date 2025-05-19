@@ -12,10 +12,32 @@ import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.tasks.compile.AbstractCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.ByteArrayOutputStream
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import org.gradle.api.GradleException
 import java.io.File
 
 const val TASK_GROUP = "cloudstream"
+
+fun mergeJars(jars: List<File>, outputJar: File) {
+  ZipOutputStream(outputJar.outputStream()).use { out ->
+    val added = mutableSetOf<String>()
+
+    jars.forEach { jar ->
+      ZipInputStream(jar.inputStream()).use { zip ->
+        var entry = zip.nextEntry
+        while (entry != null) {
+          if (!entry.isDirectory && added.add(entry.name)) {
+            out.putNextEntry(entry)
+            zip.copyTo(out)
+            out.closeEntry()
+          }
+          entry = zip.nextEntry
+        }
+      }
+    }
+  }
+}
 
 fun registerTasks(project: Project) {
     val extension = project.extensions.getCloudstream()
@@ -48,6 +70,27 @@ fun registerTasks(project: Project) {
             it.input.from(kotlinTask.destinationDirectory)
         }
 
+        val dependencies = project.configurations.getByName("implementation").dependencies
+            .filter { it.group == project.rootProject.name }
+            .map { it.name }
+            .toList()
+
+        if (dependencies.isNotEmpty()) {
+            it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
+            dependencies.forEach { dependencyPath ->
+
+                val dependencyProject = project.rootProject.findProject(dependencyPath)
+                    ?: return@forEach
+
+                val dependencyTask = dependencyProject.tasks.findByName("compileDebugKotlin")
+                    as KotlinCompile?
+                    ?: return@forEach
+
+                it.dependsOn(dependencyTask)
+                it.input.from(dependencyTask.destinationDirectory)
+            }
+        }
+
         // This task does not seem to be required for a successful cs3 file
 
 //        val javacTask = project.tasks.findByName("compileDebugJavaWithJavac") as AbstractCompile?
@@ -78,6 +121,25 @@ fun registerTasks(project: Project) {
         it.group = TASK_GROUP
         it.dependsOn("createFullJarDebug") // Ensure JAR is built before copying
 
+        val dependencies = project.configurations.getByName("implementation").dependencies
+            .filter { it.group == project.rootProject.name }
+            .map { it.name }
+            .toList()
+
+        if (dependencies.isNotEmpty()) {
+            it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
+            dependencies.forEach { dependencyPath ->
+
+                val dependencyProject = project.rootProject.findProject(dependencyPath)
+                    ?: return@forEach
+
+                val dependencyJarTask = dependencyProject.tasks.findByName("createFullJarDebug")
+                    ?: return@forEach
+
+                it.dependsOn(dependencyJarTask)
+            }
+        }
+
         it.doFirst {
             if (extension.pluginClassName == null) {
                 if (pluginClassFile.exists()) {
@@ -98,6 +160,22 @@ fun registerTasks(project: Project) {
                 val targetDir = project.buildDir // Top-level build directory
                 val targetFile = targetDir.resolve("${project.name}.jar")
                 jarFile.copyTo(targetFile, overwrite = true)
+
+                val jarFileList = mutableListOf<File>(jarFile)
+                if (dependencies.isNotEmpty()) {
+                    for (dependencyPath in dependencies) {
+                        val dependency = project.rootProject.findProject(dependencyPath) ?: continue
+                        val dependencyJarTask = dependency.tasks.findByName("createFullJarDebug") ?: continue
+                        val dependencyJarFile = dependencyJarTask.outputs.files.singleFile
+                        if (dependencyJarFile != null && dependencyJarFile.exists()) {
+                            jarFileList.add(dependencyJarFile)
+                        } else {
+                            continue
+                        }
+                    }
+                    mergeJars(jarFileList, targetFile)
+                }
+
                 extension.jarFileSize = jarFile.length()
                 it.logger.lifecycle("Made Cloudstream cross-platform package at ${targetFile.absolutePath}")
             } else {
@@ -164,15 +242,16 @@ fun registerTasks(project: Project) {
                         extension.pluginClassName = pluginClassFile.readText()
                     }
                 }
-
-                manifestFile.writeText(
-                    JsonBuilder(
-                        project.makeManifest(),
-                        JsonGenerator.Options()
-                            .excludeNulls()
-                            .build()
-                    ).toString()
-                )
+                if (!extension.isLibrary) {
+                    manifestFile.writeText(
+                        JsonBuilder(
+                            project.makeManifest(),
+                            JsonGenerator.Options()
+                                .excludeNulls()
+                                .build()
+                        ).toString()
+                    )
+                }
             }
 
             it.from(compileDexTask.outputFile)
@@ -200,7 +279,9 @@ fun registerTasks(project: Project) {
                 task.logger.lifecycle("Made Cloudstream package at ${task.outputs.files.singleFile}")
             }
         }
-        project.rootProject.tasks.getByName("makePluginsJson").dependsOn(make)
+        if (!extension.isLibrary) {
+            project.rootProject.tasks.getByName("makePluginsJson").dependsOn(make)
+        }
     }
 
     project.tasks.register("cleanCache", CleanCacheTask::class.java) {
