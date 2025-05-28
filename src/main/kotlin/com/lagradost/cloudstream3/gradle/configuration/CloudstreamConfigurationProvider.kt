@@ -33,5 +33,7 @@ class CloudstreamConfigurationProvider : IConfigurationProvider {
         }
 
         project.dependencies.add("compileOnly", project.files(apkinfo.jarFile))
+        project.dependencies.add("testCompileOnly", project.files(apkinfo.jarFile))
+
     }
 }
