@@ -15,6 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import org.gradle.api.GradleException
+import org.gradle.api.artifacts.ProjectDependency
 import java.io.File
 
 const val TASK_GROUP = "cloudstream"
@@ -71,23 +72,22 @@ fun registerTasks(project: Project) {
         }
 
         val dependencies = project.configurations.getByName("implementation").dependencies
-            .filter { it.group == project.rootProject.name }
-            .map { it.name }
+            .withType(ProjectDependency::class.java)
+            .map { it.dependencyProject.path }
             .toList()
 
-        if (dependencies.isNotEmpty()) {
-            it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
-            dependencies.forEach { dependencyPath ->
+        it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
 
-                val dependencyProject = project.rootProject.findProject(dependencyPath)
-                    ?: return@forEach
-
-                val dependencyTask = dependencyProject.tasks.findByName("compileDebugKotlin")
-                    as KotlinCompile?
-                    ?: return@forEach
-
-                it.dependsOn(dependencyTask)
-                it.input.from(dependencyTask.destinationDirectory)
+        dependencies.forEach { dependencyPath ->
+            project.rootProject.findProject(dependencyPath)?.let { dependencyProject ->
+                (dependencyProject.tasks.findByName("compileDebugKotlin") as? KotlinCompile)?.let { dependencyKotlinTask ->
+                    it.dependsOn(dependencyKotlinTask)
+                    it.input.from(dependencyKotlinTask.destinationDirectory)
+                } ?: run {
+                    project.logger.warn("Could not find compileDebugKotlin task for dependency: $dependencyPath")
+                }
+            } ?: run {
+                project.logger.warn("Could not find project for dependency: $dependencyPath")
             }
         }
 
@@ -122,21 +122,21 @@ fun registerTasks(project: Project) {
         it.dependsOn("createFullJarDebug") // Ensure JAR is built before copying
 
         val dependencies = project.configurations.getByName("implementation").dependencies
-            .filter { it.group == project.rootProject.name }
-            .map { it.name }
+            .withType(ProjectDependency::class.java)
+            .map { it.dependencyProject.path }
             .toList()
 
-        if (dependencies.isNotEmpty()) {
-            it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
-            dependencies.forEach { dependencyPath ->
+        it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
 
-                val dependencyProject = project.rootProject.findProject(dependencyPath)
-                    ?: return@forEach
-
-                val dependencyJarTask = dependencyProject.tasks.findByName("createFullJarDebug")
-                    ?: return@forEach
-
-                it.dependsOn(dependencyJarTask)
+        dependencies.forEach { dependencyPath ->
+            project.rootProject.findProject(dependencyPath)?.let { dependencyProject ->
+                (dependencyProject.tasks.findByName("createFullJarDebug"))?.let { dependencyJarTask ->
+                    it.dependsOn(dependencyJarTask)
+                } ?: run {
+                    project.logger.warn("Could not find createFullJarDebug task for dependency: $dependencyPath")
+                }
+            } ?: run {
+                project.logger.warn("Could not find project for dependency: $dependencyPath")
             }
         }
 
