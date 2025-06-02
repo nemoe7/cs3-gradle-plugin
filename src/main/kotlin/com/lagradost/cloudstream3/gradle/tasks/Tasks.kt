@@ -40,6 +40,17 @@ fun mergeJars(jars: List<File>, outputJar: File) {
   }
 }
 
+fun Long.toReadableSize(): String {
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var size = this.toDouble()
+    var index = 0
+    while (size >= 1024 && index < units.lastIndex) {
+        size /= 1024
+        index++
+    }
+    return String.format("%.2f %s", size, units[index])
+}
+
 fun registerTasks(project: Project) {
     val extension = project.extensions.getCloudstream()
     val intermediates = project.buildDir.resolve("intermediates")
@@ -71,21 +82,37 @@ fun registerTasks(project: Project) {
             it.input.from(kotlinTask.destinationDirectory)
         }
 
+        val android = project.extensions.getByName("android") as BaseExtension
+        val debugType = android.buildTypes.getByName("debug")
+        val releaseType = android.buildTypes.getByName("release")
+
+        it.proguardFiles.from(
+            project.provider {
+                val filesToAdd = android.defaultConfig.proguardFiles +
+                        debugType.proguardFiles +
+                        releaseType.proguardFiles
+
+                filesToAdd.filter {
+                    it.exists() && it.isFile && (it.extension == "pro" || it.extension == "txt")
+                }
+            }
+        )
+
         val dependencies = project.configurations.getByName("implementation").dependencies
             .withType(ProjectDependency::class.java)
             .map { it.dependencyProject.path }
-            .toList()
 
         it.logger.info("Resolved subproject dependencies for ${project.name}: $dependencies")
 
         dependencies.forEach { dependencyPath ->
             project.rootProject.findProject(dependencyPath)?.let { dependencyProject ->
-                (dependencyProject.tasks.findByName("compileDebugKotlin") as? KotlinCompile)?.let { dependencyKotlinTask ->
-                    it.dependsOn(dependencyKotlinTask)
-                    it.input.from(dependencyKotlinTask.destinationDirectory)
-                } ?: run {
-                    project.logger.warn("Could not find compileDebugKotlin task for dependency: $dependencyPath")
-                }
+                (dependencyProject.tasks.findByName("compileDebugKotlin") as? KotlinCompile)
+                    ?.let { dependencyKotlinTask ->
+                        it.dependsOn(dependencyKotlinTask)
+                        it.input.from(dependencyKotlinTask.destinationDirectory)
+                    } ?: run {
+                        project.logger.warn("Could not find compileDebugKotlin task for dependency: $dependencyPath")
+                    }
             } ?: run {
                 project.logger.warn("Could not find project for dependency: $dependencyPath")
             }
@@ -276,7 +303,11 @@ fun registerTasks(project: Project) {
 
             it.doLast { task ->
                 extension.fileSize = task.outputs.files.singleFile.length()
-                task.logger.lifecycle("Made Cloudstream package at ${task.outputs.files.singleFile}")
+                task.logger.lifecycle(
+                    "Made Cloudstream package at {} ({})",
+                    task.outputs.files.singleFile,
+                    task.outputs.files.singleFile.length().toReadableSize()
+                )
             }
         }
         if (!extension.isLibrary) {
