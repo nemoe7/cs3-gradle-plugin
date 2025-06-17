@@ -254,7 +254,15 @@ fun registerTasks(project: Project) {
     }
 
     project.afterEvaluate {
-        val make = project.tasks.register("make", Zip::class.java) {
+        val make = project.tasks.register("make", Zip::class.java) label@{
+            if (extension.isLibrary) {
+                val kotlinTask = project.tasks.findByName("compileDebugKotlin") as KotlinCompile?
+                if (kotlinTask != null) {
+                    it.dependsOn(kotlinTask)
+                }
+                return@label
+            }
+
             val compileDexTask = compileDex.get()
             it.dependsOn(compileDexTask)
             if (extension.isCrossPlatform) {
